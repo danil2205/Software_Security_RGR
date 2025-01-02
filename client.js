@@ -63,14 +63,7 @@ client.on('data', (data) => {
     sessionKey = hash.digest('hex');
     console.log(`Created session key: ${sessionKey}`);
   } else if (message.type === 'ready') {
-    const decipher = crypto.createDecipheriv(
-      'aes-256-cbc',
-      Buffer.from(sessionKey, 'hex'),
-      Buffer.alloc(16, 0)
-    );
-    let decryptedMessage = decipher.update(message.data, 'hex', 'utf8');
-    decryptedMessage += decipher.final('utf8');
-
+    const decryptedMessage = decryptMessage(sessionKey, message.data);
     if (decryptedMessage === 'ready') {
       console.log('Received encrypted "ready" message from server');
       const encryptedReady = encryptMessage(sessionKey, 'ready');
