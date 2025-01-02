@@ -12,17 +12,33 @@ const server = net.createServer((socket) => {
   console.log('Client connected');
 
   socket.on('data', (data) => {
-    const clientHello = data.toString();
-    console.log(`Received from client "hello": ${clientHello}`);
+    const message = JSON.parse(data.toString());
 
-    const serverHello = crypto.randomBytes(16).toString('hex');
-    console.log(`Send to client "hello": ${serverHello}`);
-    socket.write(
-      JSON.stringify({
-        serverHello,
-        publicKey: publicKey.export({ type: 'spki', format: 'pem' }),
-      })
-    );
+    if (message.type === 'hello') {
+      console.log(`Received from client "hello": ${message.data}`);
+
+      const serverHello = crypto.randomBytes(16).toString('hex');
+      console.log(`Send to client "hello": ${serverHello}`);
+      socket.write(
+        JSON.stringify({
+          type: 'serverHello',
+          data: {
+            serverHello,
+            publicKey: publicKey.export({ type: 'spki', format: 'pem' }),
+          },
+        })
+      );
+    } else if (message.type === 'premaster') {
+      const encryptedPremaster = message.data;
+      console.log('Received encrypted premaster from client');
+
+      const premaster = crypto.privateDecrypt(
+        privateKey,
+        Buffer.from(encryptedPremaster, 'hex')
+      );
+
+      console.log(`Decrypted premaster: ${premaster.toString('hex')}`);
+    }
   });
 
   socket.on('end', () => {
