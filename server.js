@@ -8,16 +8,23 @@ const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
   modulusLength: 2048,
 });
 
+let sessionKey;
+
 const server = net.createServer((socket) => {
   console.log('Client connected');
+
+  let serverHello = null;
+  let premaster = null;
 
   socket.on('data', (data) => {
     const message = JSON.parse(data.toString());
 
     if (message.type === 'hello') {
-      console.log(`Received from client "hello": ${message.data}`);
+      const clientHello = message.data
+      socket.clientHello = clientHello;
+      console.log(`Received from client "hello": ${clientHello}`);
 
-      const serverHello = crypto.randomBytes(16).toString('hex');
+      serverHello = crypto.randomBytes(16).toString('hex');
       console.log(`Send to client "hello": ${serverHello}`);
       socket.write(
         JSON.stringify({
@@ -38,6 +45,34 @@ const server = net.createServer((socket) => {
       );
 
       console.log(`Decrypted premaster: ${premaster.toString('hex')}`);
+
+      const hash = crypto.createHash('sha256');
+      hash.update(socket.clientHello + serverHello + premaster);
+      sessionKey = hash.digest('hex');
+      console.log(`Created session key: ${sessionKey}`);
+
+      const cipher = crypto.createCipheriv(
+        'aes-256-cbc',
+        Buffer.from(sessionKey, 'hex'),
+        Buffer.alloc(16, 0)
+      );
+      let encryptedReady = cipher.update('ready', 'utf8', 'hex');
+      encryptedReady += cipher.final('hex');
+      socket.write(JSON.stringify({ type: 'ready', data: encryptedReady }));
+
+      console.log('Sent to client a message "ready"');
+    } else if (message.type === 'clientReady') {
+      const decipher = crypto.createDecipheriv(
+        'aes-256-cbc',
+        Buffer.from(sessionKey, 'hex'),
+        Buffer.alloc(16, 0)
+      );
+      let decryptedMessage = decipher.update(message.data, 'hex', 'utf8');
+      decryptedMessage += decipher.final('utf8');
+
+      if (decryptedMessage === 'ready') {
+        console.log('Received encrypted "ready" message from client');
+      }
     }
   });
 
