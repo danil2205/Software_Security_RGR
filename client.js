@@ -2,10 +2,32 @@
 
 const net = require('net');
 const crypto = require("crypto");
+const fs = require('fs');
+const { decryptMessage, encryptMessage } = require('./utils.js');
 
 const clientHello = crypto.randomBytes(16).toString('hex');
 let sessionKey;
 let serverHello = null;
+
+const sendSecureMessage = (key, message) => {
+  const encryptedMessage = encryptMessage(key, message)
+  client.write(JSON.stringify({ type: 'secureMessage', data: encryptedMessage }));
+  console.log(`Sent ecnrypted message: ${message}`);
+}
+
+const sendEncryptedFile = (key, filePath) => {
+  const fileContent = fs.readFileSync(filePath, 'utf8');
+  const encryptedFileContent = encryptMessage(key, fileContent);
+
+  client.write(
+    JSON.stringify({
+      type: 'encryptedFile',
+      fileName: `saved_by_server.txt`,
+      data: encryptedFileContent,
+    })
+  );
+  console.log(`Sent encrypted file: ${filePath}`);
+}
 
 const client = net.createConnection({ port: 3000 }, () => {
   console.log('Connected to server');
@@ -51,18 +73,16 @@ client.on('data', (data) => {
 
     if (decryptedMessage === 'ready') {
       console.log('Received encrypted "ready" message from server');
-
-      const cipher = crypto.createCipheriv(
-        'aes-256-cbc',
-        Buffer.from(sessionKey, 'hex'),
-        Buffer.alloc(16, 0)
-      );
-      let encryptedReady = cipher.update('ready', 'utf8', 'hex');
-      encryptedReady += cipher.final('hex');
+      const encryptedReady = encryptMessage(sessionKey, 'ready');
       client.write(JSON.stringify({ type: 'clientReady', data: encryptedReady }));
-
       console.log('Sent encrypted message "ready" to server');
+
+      sendSecureMessage(sessionKey, 'Hello World Server');
+      sendEncryptedFile(sessionKey, './test.txt');
     }
+  } else if (message.type === 'secureMessage') {
+    const decryptedMessage = decryptMessage(sessionKey, message.data);
+    console.log(`Received encrypted answer from server: "${decryptedMessage}"`);
   }
 });
 

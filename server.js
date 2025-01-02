@@ -2,6 +2,8 @@
 
 const net = require('net');
 const crypto = require('crypto');
+const fs = require('fs');
+const { decryptMessage, encryptMessage } = require('./utils.js');
 const PORT = 3000;
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
@@ -14,7 +16,6 @@ const server = net.createServer((socket) => {
   console.log('Client connected');
 
   let serverHello = null;
-  let premaster = null;
 
   socket.on('data', (data) => {
     const message = JSON.parse(data.toString());
@@ -51,28 +52,27 @@ const server = net.createServer((socket) => {
       sessionKey = hash.digest('hex');
       console.log(`Created session key: ${sessionKey}`);
 
-      const cipher = crypto.createCipheriv(
-        'aes-256-cbc',
-        Buffer.from(sessionKey, 'hex'),
-        Buffer.alloc(16, 0)
-      );
-      let encryptedReady = cipher.update('ready', 'utf8', 'hex');
-      encryptedReady += cipher.final('hex');
+      const encryptedReady = encryptMessage(sessionKey, 'ready');
       socket.write(JSON.stringify({ type: 'ready', data: encryptedReady }));
-
       console.log('Sent to client a message "ready"');
     } else if (message.type === 'clientReady') {
-      const decipher = crypto.createDecipheriv(
-        'aes-256-cbc',
-        Buffer.from(sessionKey, 'hex'),
-        Buffer.alloc(16, 0)
-      );
-      let decryptedMessage = decipher.update(message.data, 'hex', 'utf8');
-      decryptedMessage += decipher.final('utf8');
-
+      const decryptedMessage = decryptMessage(sessionKey, message.data);
       if (decryptedMessage === 'ready') {
         console.log('Received encrypted "ready" message from client');
       }
+    } else if (message.type === 'secureMessage') {
+      const decryptedMessage = decryptMessage(sessionKey, message.data);
+      console.log(`Received message from client: ${decryptedMessage}`);
+
+      const response = `Server got: ${decryptedMessage}`;
+      const encryptedResponse = encryptMessage(sessionKey, response);
+      socket.write(JSON.stringify({ type: 'secureMessage', data: encryptedResponse }));
+      console.log('Sent encrypted message to client');
+    } else if (message.type === 'encryptedFile') {
+      const decryptedFileContent = decryptMessage(sessionKey, message.data);
+      const outputFilePath = `./${message.fileName}`;
+      fs.writeFileSync(outputFilePath, decryptedFileContent, 'utf8');
+      console.log(`Saved encrypted file to ${outputFilePath}`);
     }
   });
 
